@@ -59,10 +59,10 @@ namespace Avalonia.Collections
         /// </summary>
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="ICollection{T}.Count"/>
         public int Count => _inner.Count;
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="ICollection{T}.IsReadOnly"/>
         public bool IsReadOnly => false;
 
         /// <inheritdoc/>
@@ -131,7 +131,7 @@ namespace Avalonia.Collections
             NotifyAdd(key, value);
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="ICollection{T}.Clear"/>
         public void Clear()
         {
             var old = _inner;
@@ -152,7 +152,7 @@ namespace Avalonia.Collections
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IDictionary{TKey,TValue}.ContainsKey"/>
         public bool ContainsKey(TKey key) => _inner.ContainsKey(key);
 
         /// <inheritdoc/>
@@ -167,9 +167,8 @@ namespace Avalonia.Collections
         /// <inheritdoc/>
         public bool Remove(TKey key)
         {
-            if (_inner.TryGetValue(key, out var value))
+            if (_inner.Remove(key, out var value))
             {
-                _inner.Remove(key);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Count)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs($"{CommonPropertyNames.IndexerName}[{key}]"));
 
@@ -190,8 +189,9 @@ namespace Avalonia.Collections
             }
         }
 
-        /// <inheritdoc/>
+        /// <inheritdoc cref="IDictionary{TKey,TValue}.TryGetValue"/>
         public bool TryGetValue(TKey key, [MaybeNullWhen(false)] out TValue value) => _inner.TryGetValue(key, out value);
+
         /// <inheritdoc/>
         IEnumerator IEnumerable.GetEnumerator() => _inner.GetEnumerator();
 

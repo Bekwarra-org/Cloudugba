@@ -13,7 +13,6 @@
 {
     ComObjectWeakPtr<TopLevelImpl> _parent;
     NSTrackingArea* _area;
-    bool _isLeftPressed, _isMiddlePressed, _isRightPressed, _isXButton1Pressed, _isXButton2Pressed;
     AvnInputModifiers _modifierState;
     NSEvent* _lastMouseDownEvent;
     AvnPixelSize _lastPixelSize;
@@ -387,10 +386,56 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (BOOL) resignFirstResponder
 {
-    auto parent = _parent.tryGet();
-    if(parent)
-        parent->TopLevelEvents->LostFocus();
+    auto window = [self window];
+    if (window != nullptr && window.keyWindow)
+    {
+        [self onLostFocus];
+    }
+    
     return YES;
+}
+
+- (void)viewWillMoveToWindow:(NSWindow *)newWindow
+{
+    auto oldWindow = [self window];
+    if (oldWindow == newWindow)
+    {
+        // viewWillMoveToWindow can be called with the same window when the view hierarchy changes
+        return;
+    }
+
+    if (oldWindow != nullptr)
+    {
+        [[NSNotificationCenter defaultCenter]
+            removeObserver:self
+            name:@"NSWindowDidResignKeyNotification"
+            object: oldWindow];
+    }
+
+    if (newWindow != nullptr)
+    {
+        [[NSNotificationCenter defaultCenter]
+            addObserver:self
+            selector:@selector(windowDidResignKey:)
+            name:@"NSWindowDidResignKeyNotification"
+            object: newWindow];
+    }
+}
+
+- (void)windowDidResignKey:(NSNotification*)notification
+{
+    auto window = [self window];
+    if (window != nullptr && notification.object == window && [window firstResponder] == self)
+    {
+        [self onLostFocus];
+    }
+}
+
+- (void)onLostFocus
+{
+    auto parent = _parent.tryGet();
+    if (parent)
+        parent->TopLevelEvents->LostFocus();
 }
 
 - (void)mouseMoved:(NSEvent *)event
@@ -400,7 +445,6 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void)mouseDown:(NSEvent *)event
 {
-    _isLeftPressed = true;
     _lastMouseDownEvent = event;
     [self mouseEvent:event withType:LeftButtonDown];
 }
@@ -412,16 +456,12 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     switch(event.buttonNumber)
     {
         case 2:
-        case 3:
-            _isMiddlePressed = true;
             [self mouseEvent:event withType:MiddleButtonDown];
             break;
-        case 4:
-            _isXButton1Pressed = true;
+        case 3:
             [self mouseEvent:event withType:XButton1Down];
             break;
-        case 5:
-            _isXButton2Pressed = true;
+        case 4:
             [self mouseEvent:event withType:XButton2Down];
             break;
 
@@ -432,14 +472,12 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void)rightMouseDown:(NSEvent *)event
 {
-    _isRightPressed = true;
     _lastMouseDownEvent = event;
     [self mouseEvent:event withType:RightButtonDown];
 }
 
 - (void)mouseUp:(NSEvent *)event
 {
-    _isLeftPressed = false;
     [self mouseEvent:event withType:LeftButtonUp];
 }
 
@@ -448,16 +486,12 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     switch(event.buttonNumber)
     {
         case 2:
-        case 3:
-            _isMiddlePressed = false;
             [self mouseEvent:event withType:MiddleButtonUp];
             break;
-        case 4:
-            _isXButton1Pressed = false;
+        case 3:
             [self mouseEvent:event withType:XButton1Up];
             break;
-        case 5:
-            _isXButton2Pressed = false;
+        case 4:
             [self mouseEvent:event withType:XButton2Up];
             break;
 
@@ -468,7 +502,6 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (void)rightMouseUp:(NSEvent *)event
 {
-    _isRightPressed = false;
     [self mouseEvent:event withType:RightButtonUp];
 }
 
@@ -549,15 +582,6 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 - (void)setModifiers:(NSEventModifierFlags)modifierFlags
 {
     _modifierState = [self getModifiers:modifierFlags];
-}
-
-- (void)resetPressedMouseButtons
-{
-    _isLeftPressed = false;
-    _isRightPressed = false;
-    _isMiddlePressed = false;
-    _isXButton1Pressed = false;
-    _isXButton2Pressed = false;
 }
 
 - (void)flagsChanged:(NSEvent *)event
@@ -706,15 +730,17 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     if (mod & NSEventModifierFlagCommand)
         rv |= Windows;
 
-    if (_isLeftPressed)
+    NSUInteger pressedButtons = [NSEvent pressedMouseButtons];
+        
+    if (pressedButtons & (1 << 0))  // Left mouse button
         rv |= LeftMouseButton;
-    if (_isMiddlePressed)
-        rv |= MiddleMouseButton;
-    if (_isRightPressed)
+    if (pressedButtons & (1 << 1))  // Right mouse button
         rv |= RightMouseButton;
-    if (_isXButton1Pressed)
+    if (pressedButtons & (1 << 2))  // Middle mouse button
+        rv |= MiddleMouseButton;
+    if (pressedButtons & (1 << 3))  // X1 button
         rv |= XButton1MouseButton;
-    if (_isXButton2Pressed)
+    if (pressedButtons & (1 << 4))  // X2 button
         rv |= XButton2MouseButton;
 
     return (AvnInputModifiers)rv;
@@ -828,9 +854,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
 
 - (NSDragOperation)triggerAvnDragEvent: (AvnDragEventType) type info: (id <NSDraggingInfo>)info
 {
-    auto localPoint = [self convertPoint:[info draggingLocation] toView:self];
-    auto avnPoint = ToAvnPoint(localPoint);
-    auto point = [self translateLocalPoint:avnPoint];
+    NSPoint eventLocation = [info draggingLocation];
+    auto viewLocation = [self convertPoint:NSMakePoint(0, 0) toView:nil];
+    auto localPoint = NSMakePoint(eventLocation.x - viewLocation.x, viewLocation.y - eventLocation.y);
+    auto point = ToAvnPoint(localPoint);
     auto modifiers = [self getModifiers:[[NSApp currentEvent] modifierFlags]];
     NSDragOperation nsop = [info draggingSourceOperationMask];
 
@@ -840,7 +867,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
       return NSDragOperationNone;
     int reffects = (int)parent->TopLevelEvents
             ->DragEvent(type, point, modifiers, effects,
-                    CreateClipboard([info draggingPasteboard], nil),
+                    CreateClipboard([info draggingPasteboard]),
                     GetAvnDataObjectHandleFromDraggingInfo(info));
 
     NSDragOperation ret = static_cast<NSDragOperation>(0);
@@ -915,7 +942,7 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     auto window = (AvnWindow*)[self window];
     auto peer = [window automationPeer];
 
-    if (!peer->IsRootProvider())
+    if (peer == nullptr || !peer->IsRootProvider())
         return nil;
 
     auto clientPoint = [window convertPointFromScreen:point];
@@ -952,6 +979,10 @@ static void ConvertTilt(NSPoint tilt, float* xTilt, float* yTilt)
     // of the AvnView.
     auto window = (AvnWindow*)[self window];
     auto peer = [window automationPeer];
+    if (peer == nullptr)
+    {
+        return;
+    }
     auto childPeers = peer->GetChildren();
     auto childCount = childPeers != nullptr ? childPeers->GetCount() : 0;
 

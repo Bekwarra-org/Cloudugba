@@ -11,7 +11,7 @@ namespace Avalonia.Skia
 {
     internal class GlyphRunImpl : IGlyphRunImpl
     {
-        private readonly GlyphTypefaceImpl _glyphTypefaceImpl;
+        private readonly SkiaTypeface _glyphTypefaceImpl;
         private readonly ushort[] _glyphIndices;
         private readonly SKPoint[] _glyphPositions;
 
@@ -23,7 +23,7 @@ namespace Avalonia.Skia
         private const int FontEdgingsCount = (int)SKFontEdging.SubpixelAntialias + 1;
         private readonly SKTextBlob?[] _textBlobCache = new SKTextBlob?[FontEdgingsCount];
 
-        public GlyphRunImpl(IGlyphTypeface glyphTypeface, double fontRenderingEmSize,
+        public GlyphRunImpl(GlyphTypeface glyphTypeface, double fontRenderingEmSize,
             IReadOnlyList<GlyphInfo> glyphInfos, Point baselineOrigin)
         {
             if (glyphTypeface == null)
@@ -36,7 +36,7 @@ namespace Avalonia.Skia
                 throw new ArgumentNullException(nameof(glyphInfos));
             }
 
-            _glyphTypefaceImpl = (GlyphTypefaceImpl)glyphTypeface;
+            _glyphTypefaceImpl = (SkiaTypeface)glyphTypeface.PlatformTypeface;
             FontRenderingEmSize = fontRenderingEmSize;
 
             var count = glyphInfos.Count;
@@ -76,17 +76,15 @@ namespace Avalonia.Skia
                 var gBounds = glyphBounds[i];
                 var advance = glyphInfos[i].GlyphAdvance;
 
-                runBounds = runBounds.Union(new Rect(currentX + gBounds.Left, baselineOrigin.Y + gBounds.Top, gBounds.Width, gBounds.Height));
+                runBounds = runBounds.Union(new Rect(currentX + gBounds.Left, gBounds.Top, gBounds.Width, gBounds.Height));
 
                 currentX += advance;
             }
             ArrayPool<SKRect>.Shared.Return(glyphBounds);
 
             BaselineOrigin = baselineOrigin;
-            Bounds = runBounds.Translate(new Vector(baselineOrigin.X, 0));
+            Bounds = runBounds.Translate(new Vector(baselineOrigin.X, baselineOrigin.Y));
         }
-
-        public IGlyphTypeface GlyphTypeface => _glyphTypefaceImpl;
 
         public double FontRenderingEmSize { get; }
 

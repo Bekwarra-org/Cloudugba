@@ -4,6 +4,7 @@ using System.ComponentModel;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
+using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Interactivity;
@@ -161,7 +162,7 @@ namespace Avalonia.Controls
             get => GetValue(TagProperty);
             set => SetValue(TagProperty, value);
         }
-        
+
         /// <summary>
         /// Occurs when the user has completed a context input gesture, such as a right-click.
         /// </summary>
@@ -386,12 +387,12 @@ namespace Avalonia.Controls
             InitializeIfNeeded();
 
             ScheduleOnLoadedCore();
-
-            Holding += OnHoldEvent;
         }
 
-        private void OnHoldEvent(object? sender, HoldingRoutedEventArgs e)
+        protected override void OnHolding(HoldingRoutedEventArgs e)
         {
+            base.OnHolding(e);
+
             if (e.Source == this && !e.Handled && e.HoldingState == HoldingState.Started)
             {
                 // Trigger ContentRequest when hold has started
@@ -408,8 +409,6 @@ namespace Avalonia.Controls
             base.OnDetachedFromVisualTreeCore(e);
 
             OnUnloadedCore();
-
-            Holding -= OnHoldEvent;
         }
 
         /// <inheritdoc/>
@@ -564,6 +563,13 @@ namespace Avalonia.Controls
                     OnSizeChanged(sizeChangedEventArgs);
                 }
             }
+        }
+        
+        /// <inheritdoc />
+        protected override void UpdateDataValidation(AvaloniaProperty property, BindingValueType state, Exception? error)
+        {
+            DataValidationErrors.SetError(this, error);
+            base.UpdateDataValidation(property, state, error);
         }
 
         // Since we are resetting the dispatcher instance, the callback might never arrive

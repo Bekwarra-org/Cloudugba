@@ -8,6 +8,7 @@ using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Harfbuzz;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
@@ -749,7 +750,7 @@ namespace Avalonia.Controls.UnitTests
         [Fact]
         public void TextBox_CaretIndex_Persists_When_Focus_Lost()
         {
-            using (UnitTestApplication.Start(FocusServices))
+            using (UnitTestApplication.Start(FocusServices.With(assetLoader: new StandardAssetLoader())))
             {
                 var target1 = new TextBox
                 {
@@ -1875,6 +1876,68 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
+        [Theory]
+        [InlineData(0)]
+        [InlineData(4)]
+        [InlineData(8)]
+        public void When_Selecting_Multiline_Selection_Should_Be_Extended_With_Up_Arrow_Key_Till_Start_Of_Text(int caretOffsetFromEnd)
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var tb = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = """
+                           AAAAAA
+                           BBBB
+                           CCCCCCCC
+                           """,
+                    AcceptsReturn = true
+                };
+                tb.ApplyTemplate();
+                tb.Measure(Size.Infinity);
+                tb.CaretIndex = tb.Text.Length - caretOffsetFromEnd;
+
+                RaiseKeyEvent(tb, Key.Up, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Up, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Up, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Up, KeyModifiers.Shift);
+
+                Assert.Equal(0, tb.SelectionEnd);
+            }
+        }
+
+        [Theory]
+        [InlineData(0)]
+        [InlineData(3)]
+        [InlineData(6)]
+        public void When_Selecting_Multiline_Selection_Should_Be_Extended_With_Down_Arrow_Key_Till_End_Of_Text(int caretOffsetFromStart)
+        {
+            using (UnitTestApplication.Start(Services))
+            {
+                var tb = new TextBox
+                {
+                    Template = CreateTemplate(),
+                    Text = """
+                           AAAAAA
+                           BBBB
+                           CCCCCCCC
+                           """,
+                    AcceptsReturn = true
+                };
+                tb.ApplyTemplate();
+                tb.Measure(Size.Infinity);
+                tb.CaretIndex = caretOffsetFromStart;
+
+                RaiseKeyEvent(tb, Key.Down, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Down, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Down, KeyModifiers.Shift);
+                RaiseKeyEvent(tb, Key.Down, KeyModifiers.Shift);
+
+                Assert.Equal(tb.Text.Length, tb.SelectionEnd);
+            }
+        }
+
         [Fact]
         public void TextBox_In_AdornerLayer_Will_Not_Cause_Collection_Modified_In_VisualLayerManager_Measure()
         {
@@ -2067,20 +2130,39 @@ namespace Avalonia.Controls.UnitTests
             }
         }
 
+        [Fact]
+        public void Backspace_Should_Delete_CRLFNewline_Character_At_Once()
+        {
+            using var _ = UnitTestApplication.Start(Services);
+            var target = new TextBox
+            {
+                Template = CreateTemplate(),
+                Text = $"First\r\nSecond",
+                CaretIndex = 7
+            };
+            target.ApplyTemplate();
+
+            // (First\r\nSecond)
+            RaiseKeyEvent(target, Key.Back, KeyModifiers.None);
+            // (FirstSecond)
+
+            Assert.Equal("FirstSecond", target.Text);
+        }
+
         private static TestServices FocusServices => TestServices.MockThreadingInterface.With(
-            focusManager: new FocusManager(),
             keyboardDevice: () => new KeyboardDevice(),
             keyboardNavigation: () => new KeyboardNavigationHandler(),
             inputManager: new InputManager(),
             standardCursorFactory: Mock.Of<ICursorFactory>(),
-            textShaperImpl: new HeadlessTextShaperStub(),
-            fontManagerImpl: new HeadlessFontManagerStub());
+            textShaperImpl: new HarfBuzzTextShaper(),
+            fontManagerImpl: new TestFontManager());
 
         private static TestServices Services => TestServices.MockThreadingInterface.With(
             standardCursorFactory: Mock.Of<ICursorFactory>(),
             renderInterface: new HeadlessPlatformRenderInterface(),
-            textShaperImpl: new HeadlessTextShaperStub(), 
-            fontManagerImpl: new HeadlessFontManagerStub());
+            textShaperImpl: new HarfBuzzTextShaper(), 
+            fontManagerImpl: new TestFontManager(),
+            assetLoader: new StandardAssetLoader());
 
         internal static IControlTemplate CreateTemplate()
         {
@@ -2165,7 +2247,7 @@ namespace Avalonia.Controls.UnitTests
             var clipboard = new Mock<ITopLevelImpl>();
             clipboard.Setup(x => x.Compositor).Returns(RendererMocks.CreateDummyCompositor());
             clipboard.Setup(r => r.TryGetFeature(typeof(IClipboard)))
-                .Returns(new HeadlessClipboardStub());
+                .Returns(new Clipboard(new HeadlessClipboardImplStub()));
             clipboard.SetupGet(x => x.RenderScaling).Returns(1);
             return clipboard;
         }

@@ -10,9 +10,11 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Selection;
 using Avalonia.Controls.Templates;
 using Avalonia.Data;
+using Avalonia.Harfbuzz;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Layout;
+using Avalonia.Platform;
 using Avalonia.Styling;
 using Avalonia.UnitTests;
 using Avalonia.VisualTree;
@@ -1346,13 +1348,13 @@ namespace Avalonia.Controls.UnitTests.Primitives
         {
             return UnitTestApplication.Start(
                 TestServices.MockThreadingInterface.With(
-                    focusManager: new FocusManager(),
                     fontManagerImpl: new HeadlessFontManagerStub(),
                     keyboardDevice: () => new KeyboardDevice(),
                     keyboardNavigation: () => new KeyboardNavigationHandler(),
                     inputManager: new InputManager(),
                     renderInterface: new HeadlessPlatformRenderInterface(),
-                    textShaperImpl: new HeadlessTextShaperStub()));
+                    textShaperImpl: new HarfBuzzTextShaper(),
+                    assetLoader: new StandardAssetLoader()));
         }
 
         private class TestSelector : SelectingItemsControl

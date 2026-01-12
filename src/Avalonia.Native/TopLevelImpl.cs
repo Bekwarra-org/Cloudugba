@@ -1,5 +1,3 @@
-#nullable enable
-
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
@@ -52,7 +50,7 @@ internal class MacOSTopLevelHandle : IPlatformHandle, IMacOSTopLevelPlatformHand
     {
         return Native.ObtainNSViewHandleRetained();
     }
-    
+
     public IntPtr NSWindow => (Native as IAvnWindowBase)?.ObtainNSWindowHandle() ?? IntPtr.Zero;
 
     public IntPtr GetNSWindowRetained()
@@ -89,7 +87,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         Factory = factory;
 
         _keyboard = AvaloniaLocator.Current.GetService<IKeyboardDevice>();
-        _mouse = new MouseDevice();
+        _mouse = Avalonia.Input.MouseDevice.Primary;
         _pen = new PenDevice();
         _cursorFactory = AvaloniaLocator.Current.GetService<ICursorFactory>();
     }
@@ -98,11 +96,21 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     {
         _handle = handle;
         _savedLogicalSize = ClientSize;
-        _savedScaling = Native?.Scaling ?? 1;;
+        _savedScaling = Native?.Scaling ?? 1;
         _nativeControlHost = new NativeControlHostImpl(Native!.CreateNativeControlHost());
         _platformBehaviorInhibition = new PlatformBehaviorInhibition(Factory.CreatePlatformBehaviorInhibition());
         _surfaces = new object[] { new GlPlatformSurface(Native), new MetalPlatformSurface(Native), this };
         InputMethod = new AvaloniaNativeTextInputMethod(Native);
+    }
+
+    internal void BeginDraggingSession(
+        AvnDragDropEffects effects,
+        AvnPoint point,
+        IAvnClipboardDataSource source,
+        IAvnDndResultCallback callback,
+        IntPtr sourceHandle)
+    {
+        Native?.BeginDragAndDropOperation(effects, point, source, callback, sourceHandle);
     }
 
     public double DesktopScaling => 1;
@@ -118,7 +126,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
             {
                 return default;
             }
-            
+
             var s = Native.ClientSize;
             return new Size(s.Width, s.Height);
 
@@ -135,7 +143,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
     public Compositor Compositor => AvaloniaNativePlatform.Compositor;
     public Action? Closed { get; set; }
     public Action? LostFocus { get; set; }
-    
+
     public WindowTransparencyLevel TransparencyLevel
     {
         get => _transparencyLevel;
@@ -301,7 +309,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         Native.SetCursor(newCursor?.Cursor);
     }
 
-    public virtual IPopupImpl CreatePopup()
+    public virtual IPopupImpl? CreatePopup()
     {
         return new PopupImpl(Factory, this);
     }
@@ -377,8 +385,6 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
         _nativeControlHost?.Dispose();
         _nativeControlHost = null;
-
-        _mouse?.Dispose();
     }
 
     protected virtual bool ChromeHitTest(RawPointerEventArgs e)
@@ -397,7 +403,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         {
             throw new RenderTargetNotReadyException();
         }
-        
+
         return new FramebufferRenderTarget(this, nativeRenderTarget);
     }
 
@@ -439,7 +445,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
             {
                 return;
             }
-            
+
             var s = new Size(size->Width, size->Height);
             _parent._savedLogicalSize = s;
             _parent.Resized?.Invoke(s, (WindowResizeReason)reason);
@@ -479,7 +485,7 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
         AvnDragDropEffects IAvnTopLevelEvents.DragEvent(AvnDragEventType type, AvnPoint position,
             AvnInputModifiers modifiers,
             AvnDragDropEffects effects,
-            IAvnClipboard clipboard, IntPtr dataObjectHandle)
+            IAvnClipboard clipboard, IntPtr dataTransferHandle)
         {
             var device = AvaloniaLocator.Current.GetService<IDragDropDevice>();
 
@@ -492,22 +498,25 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
             {
                 return AvnDragDropEffects.None;
             }
-            
-            IDataObject? dataObject = null;
-            if (dataObjectHandle != IntPtr.Zero)
-                dataObject = GCHandle.FromIntPtr(dataObjectHandle).Target as IDataObject;
 
-            using (var clipboardDataObject = new ClipboardDataObject(clipboard))
-            {
-                if (dataObject == null)
-                    dataObject = clipboardDataObject;
+            IDataTransfer? dataTransfer = null;
+            if (dataTransferHandle != IntPtr.Zero)
+                dataTransfer = GCHandle.FromIntPtr(dataTransferHandle).Target as IDataTransfer;
 
-                var args = new RawDragEvent(device, (RawDragEventType)type,
-                    _parent._inputRoot, position.ToAvaloniaPoint(), dataObject, (DragDropEffects)effects,
-                    (RawInputModifiers)modifiers);
-                _parent.Input?.Invoke(args);
-                return (AvnDragDropEffects)args.Effects;
-            }
+            using var clipboardDataTransfer = new ClipboardDataTransfer(
+                new ClipboardReadSession(clipboard, clipboard.ChangeCount, ownsNative: true));
+            dataTransfer ??= clipboardDataTransfer;
+
+            var args = new RawDragEvent(
+                device,
+                (RawDragEventType)type,
+                _parent._inputRoot,
+                position.ToAvaloniaPoint(),
+                dataTransfer,
+                (DragDropEffects)effects,
+                (RawInputModifiers)modifiers);
+            _parent.Input?.Invoke(args);
+            return (AvnDragDropEffects)args.Effects;
         }
 
         IAvnAutomationPeer? IAvnTopLevelEvents.AutomationPeer
@@ -543,6 +552,8 @@ internal class TopLevelImpl : ITopLevelImpl, IFramebufferPlatformSurface
 
         public ILockedFramebuffer Lock()
         {
+            ObjectDisposedException.ThrowIf(_target is null, this);
+
             var w = _parent._savedLogicalSize.Width * _parent._savedScaling;
             var h = _parent._savedLogicalSize.Height * _parent._savedScaling;
             var dpi = _parent._savedScaling * 96;

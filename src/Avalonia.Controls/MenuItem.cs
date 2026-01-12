@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Specialized;
 using System.Linq;
 using System.Windows.Input;
 using Avalonia.Automation;
@@ -485,7 +484,7 @@ namespace Avalonia.Controls
         protected override void OnGotFocus(GotFocusEventArgs e)
         {
             base.OnGotFocus(e);
-            e.Handled = UpdateSelectionFromEventSource(e.Source, true);
+            ItemsControlFromItemContainer(this)?.UpdateSelectionFromEvent(this, e);
         }
 
         /// <inheritdoc/>
@@ -555,6 +554,7 @@ namespace Avalonia.Controls
             return new MenuItemAutomationPeer(this);
         }
 
+        // TODO: This is confusing for some ppl. Need to think about alternatives here. 
         protected override void UpdateDataValidation(
             AvaloniaProperty property,
             BindingValueType state,
@@ -571,7 +571,7 @@ namespace Avalonia.Controls
                 }
             }
         }
-        
+
         /// <summary>
         /// Closes all submenus of the menu item.
         /// </summary>
@@ -609,12 +609,12 @@ namespace Avalonia.Controls
             }
 
         }
-        
+
         private static void OnAccessKeyPressed(MenuItem sender, AccessKeyPressedEventArgs e)
         {
-            if (e is not { Handled: false, Target: null }) 
+            if (e is not { Handled: false, Target: null })
                 return;
-            
+
             e.Target = sender;
             e.Handled = true;
         }
@@ -789,15 +789,23 @@ namespace Avalonia.Controls
         {
             var (oldValue, newValue) = e.GetOldAndNewValue<object?>();
 
-            if (oldValue is ILogical oldLogical)
+            if (oldValue is { })
             {
-                LogicalChildren.Remove(oldLogical);
+                if (oldValue is ILogical oldLogical)
+                {
+                    LogicalChildren.Remove(oldLogical);
+                }
+
                 PseudoClasses.Remove(":icon");
             }
 
-            if (newValue is ILogical newLogical)
+            if (newValue is { })
             {
-                LogicalChildren.Add(newLogical);
+                if (newValue is ILogical newLogical)
+                {
+                    LogicalChildren.Add(newLogical);
+                }
+
                 PseudoClasses.Add(":icon");
             }
         }

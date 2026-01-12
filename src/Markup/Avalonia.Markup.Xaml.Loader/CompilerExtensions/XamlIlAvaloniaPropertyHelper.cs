@@ -64,7 +64,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
         {
             XamlAstNamePropertyReference forgedReference;
 
-            var parsedPropertyName = PropertyParser.Parse(new CharacterReader(propertyName.AsSpan()));
+            var parsedPropertyName = PropertyParser.Parse(propertyName);
             if(parsedPropertyName.owner == null)
                 forgedReference = new XamlAstNamePropertyReference(lineInfo, selectorTypeReference,
                     propertyName, selectorTypeReference);
@@ -224,6 +224,7 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
             }
 
             Setters.Insert(0, new UnsetValueSetter(types, original.DeclaringType, field));
+            TypeConverters = original.TypeConverters;
         }
 
         abstract class AvaloniaPropertyCustomSetter : IXamlILOptimizedEmitablePropertySetter, IEquatable<AvaloniaPropertyCustomSetter>
@@ -286,13 +287,13 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
                 AvaloniaXamlIlWellKnownTypes types,
                 IXamlType declaringType,
                 IXamlField avaloniaProperty)
-                : base(types, declaringType, avaloniaProperty, false, [types.IBinding])
+                : base(types, declaringType, avaloniaProperty, false, [types.BindingBase])
             {
             }
 
             public override void Emit(IXamlILEmitter emitter)
             {
-                using (var bloc = emitter.LocalsPool.GetLocal(Types.IBinding))
+                using (var bloc = emitter.LocalsPool.GetLocal(Types.BindingBase))
                     emitter
                         .Stloc(bloc.Local)
                         .Ldsfld(AvaloniaProperty)
@@ -324,13 +325,13 @@ namespace Avalonia.Markup.Xaml.XamlIl.CompilerExtensions
                 AvaloniaXamlIlWellKnownTypes types,
                 IXamlType declaringType,
                 IXamlField avaloniaProperty)
-                : base(types, declaringType, avaloniaProperty, false, [types.BindingPriority, types.IBinding])
+                : base(types, declaringType, avaloniaProperty, false, [types.BindingPriority, types.BindingBase])
             {
             }
 
             public override void Emit(IXamlILEmitter emitter)
             {
-                using (var bloc = emitter.LocalsPool.GetLocal(Types.IBinding))
+                using (var bloc = emitter.LocalsPool.GetLocal(Types.BindingBase))
                     emitter
                         .Stloc(bloc.Local)
                         .Pop() // ignore priority
